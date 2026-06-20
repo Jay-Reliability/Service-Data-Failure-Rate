@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVC Failure Rate Analysis Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        :root {
+            --bg-gradient-start: #0a0b10;
+            --bg-gradient-end: #121520;
+            --card-bg: rgba(22, 26, 43, 0.8);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #00f2fe;
+            --accent-secondary: #4facfe;
+            --accent-glow: rgba(0, 242, 254, 0.35);
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --font-family: 'Plus Jakarta Sans', 'Outfit', system-ui, -apple-system, sans-serif;
+            --modal-bg: rgba(15, 18, 30, 0.95);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent-secondary) rgba(255, 255, 255, 0.03);
+        }
+
+        /* Custom Scrollbar for Chrome/Safari/Edge */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(79, 172, 254, 0.4);
+            border-radius: 4px;
+            border: 2px solid transparent;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-secondary);
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Header Styling */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            background: rgba(10, 11, 16, 0.6);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            font-size: 1.75rem;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 10px var(--accent-glow));
+        }
+
+        .logo-text h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-text p {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.75rem;
+            font-family: var(--font-family);
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            color: #0c0e17;
+            box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
+            font-weight: 700;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px rgba(0, 242, 254, 0.4);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border-color: var(--card-border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* Main Content Grid */
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Upload Placeholder State */
+        .placeholder-card {
+            background: var(--card-bg);
+            border: 2px dashed rgba(79, 172, 254, 0.3);
+            border-radius: 1.5rem;
+            padding: 4rem 2rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin: auto;
+            max-width: 600px;
+            transition: all 0.3s ease;
+        }
+
+        .placeholder-icon {
+            font-size: 4rem;
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: float 4s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* Dashboard Statistics Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 1rem;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(to bottom, var(--accent-secondary), var(--accent-primary));
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        /* Visualizations Section */
+        .dashboard-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 2rem;
+            width: 100%;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 1.25rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(8px);
+            min-width: 0; /* Prevent children from expanding container past layout */
+            overflow: hidden; /* Enforces layout boundaries */
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-title i {
+            color: var(--accent-primary);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 480px;
+            width: 100%;
+        }
+
+        /* Pivot Table Styling */
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .search-wrapper {
+            position: relative;
+            width: 250px;
+        }
+
+        .search-wrapper i {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .table-search {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            font-size: 0.875rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .table-search:focus {
+            border-color: var(--accent-secondary);
+            box-shadow: 0 0 10px rgba(79, 172, 254, 0.2);
+        }
+
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 0.75rem;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        th {
+            background: rgba(15, 18, 30, 0.8);
+            font-weight: 700;
+            color: var(--text-secondary);
+            position: sticky;
+            top: 0;
+            white-space: nowrap;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        td.usage-month {
+            font-weight: 700;
+            color: var(--accent-primary);
+            background: rgba(0, 242, 254, 0.03);
+            text-align: center;
+            width: 100px;
+        }
+
+        td.data-cell {
+            font-family: 'Outfit', sans-serif;
+            text-align: right;
+        }
+
+        td.null-cell {
+            color: var(--text-muted);
+            text-align: center;
+            font-style: italic;
+        }
+
+        /* Popup Modal (Analysis Settings Control Panel) */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(5, 7, 12, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-container {
+            background: var(--modal-bg);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1.5rem;
+            width: 90%;
+            max-width: 950px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95) translateY(10px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-overlay.active .modal-container {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-header h2 i {
+            color: var(--accent-secondary);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.25rem;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: var(--danger);
+        }
+
+        .modal-content {
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            flex: 1;
+        }
+
+        /* File Upload Zones styling */
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+        }
+
+        .file-dropzone {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1.5px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .file-dropzone:hover {
+            background: rgba(79, 172, 254, 0.03);
+            border-color: var(--accent-secondary);
+        }
+
+        .file-dropzone.uploaded {
+            background: rgba(16, 185, 129, 0.03);
+            border-color: var(--success);
+            border-style: solid;
+        }
+
+        .file-dropzone i {
+            font-size: 2rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+            transition: transform 0.2s ease;
+        }
+
+        .file-dropzone.uploaded i {
+            color: var(--success);
+        }
+
+        .file-dropzone:hover i {
+            transform: translateY(-3px);
+        }
+
+        .file-dropzone p {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .file-dropzone span {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .file-dropzone input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* Filter Controls in Modal */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        .select-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            padding: 0.625rem 0.75rem;
+            border-radius: 0.5rem;
+            font-family: var(--font-family);
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+            cursor: pointer;
+        }
+
+        select:focus {
+            border-color: var(--accent-secondary);
+        }
+
+        select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Segmented Analysis Type Selector */
+        .analysis-tabs {
+            display: flex;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 0.25rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--card-border);
+        }
+
+        .analysis-tab {
+            flex: 1;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            border: none;
+            background: none;
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .analysis-tab.active {
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
+            color: #0c0e17;
+            font-weight: 700;
+            box-shadow: 0 4px 12px rgba(0, 242, 254, 0.15);
+        }
+
+        /* Filter selection boxes */
+        .filter-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-mini {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-mini:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .search-mini {
+            flex: 1;
+            max-width: 180px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            border-radius: 0.375rem;
+            padding: 0.25rem 0.5rem;
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            font-size: 0.75rem;
+            outline: none;
+        }
+
+        .search-mini:focus {
+            border-color: var(--accent-secondary);
+        }
+
+        .list-container {
+            max-height: 180px;
+            overflow-y: auto;
+            padding-right: 0.25rem;
+        }
+
+        /* Checklist grids */
+        .checklist-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+
+        .checklist-grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.5rem;
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.5rem;
+            border-radius: 0.375rem;
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid rgba(255, 255, 255, 0.02);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .check-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .check-item input[type="checkbox"] {
+            accent-color: var(--accent-secondary);
+            cursor: pointer;
+            width: 14px;
+            height: 14px;
+        }
+
+        .check-item span {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .check-item.checked span {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        /* Log console in footer */
+        footer {
+            padding: 1rem 2rem;
+            background: rgba(10, 11, 16, 0.8);
+            border-top: 1px solid var(--card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .console-logs {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .log-item {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .log-item i {
+            color: var(--accent-primary);
+        }
+
+        .log-item.success i {
+            color: var(--success);
+        }
+
+        /* Overlay indicator for Loading */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(5, 7, 12, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loader-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(79, 172, 254, 0.1);
+            border-top-color: var(--accent-secondary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            letter-spacing: 0.5px;
+        }
+
+        /* Custom Dropdown Styling */
+        .dropdown-trigger {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            padding: 0.625rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .dropdown-trigger:hover {
+            border-color: var(--accent-secondary);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .dropdown-popup {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--modal-bg);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 0.75rem;
+            margin-top: 0.5rem;
+            padding: 1rem;
+            z-index: 1050;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            display: none; /* Toggle visibility */
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .dropdown-popup.active {
+            display: flex;
+        }
+
+        .dropdown-popup-header {
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .checklist-grid-1 {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        /* Responsive modifications */
+        @media (max-width: 900px) {
+            .upload-section {
+                grid-template-columns: 1fr;
+            }
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            .checklist-grid-4 {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo-area">
+            <i class="fa-solid fa-chart-line logo-icon"></i>
+            <div class="logo-text">
+                <h1>SVC Failure Rate Analysis</h1>
+                <p>필드 서비스 및 신뢰성 분석 대시보드</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" id="btn-export" style="display: none;">
+                <i class="fa-solid fa-file-csv"></i> 피벗 테이블 내보내기
+            </button>
+            <button class="btn btn-primary" id="btn-settings-toggle">
+                <i class="fa-solid fa-sliders"></i> 분석 조건 설정
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content">
+        <!-- Placeholder screen when no data is loaded -->
+        <div class="placeholder-card" id="upload-placeholder">
+            <i class="fa-solid fa-cloud-arrow-up placeholder-icon"></i>
+            <div>
+                <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">데이터를 업로드해 주세요</h2>
+                <p style="color: var(--text-secondary); line-height: 1.5; font-size: 0.95rem;">
+                    서비스 발생 Raw Data와 생산수량 CSV 파일을 로드하여<br>
+                    순간고장률(PDF) 및 누적고장률(CDF) 분석을 시작할 수 있습니다.
+                </p>
+            </div>
+            <button class="btn btn-primary btn-large" id="btn-upload-start">
+                <i class="fa-solid fa-folder-open"></i> 파일 로드하기
+            </button>
+        </div>
+
+        <!-- Dashboard Widgets (Visible only after data loading) -->
+        <div id="dashboard-widgets" style="display: none; flex-direction: column; gap: 2rem; width: 100%;">
+            <!-- Summary Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">총 생산수량 (Selected)</span>
+                    <span class="stat-value" id="stat-total-prod">-</span>
+                    <span class="stat-meta"><i class="fa-solid fa-industry"></i> 선택 품종 생산합계</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">총 서비스 건수 (Filtered)</span>
+                    <span class="stat-value" id="stat-total-svc">-</span>
+                    <span class="stat-meta"><i class="fa-solid fa-screwdriver-wrench"></i> 필터 조건 충족 건수</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">최대 누적 고장률 (Max CDF)</span>
+                    <span class="stat-value" id="stat-max-cdf">-</span>
+                    <span class="stat-meta"><i class="fa-solid fa-triangle-exclamation"></i> 전체 배치 중 최고치</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">분석 대상 배치 (Count)</span>
+                    <span class="stat-value" id="stat-selected-batches">-</span>
+                    <span class="stat-meta"><i class="fa-solid fa-calendar-days"></i> 선택된 PROD_DT 개수</span>
+                </div>
+            </div>
+
+            <!-- Visualization Grid -->
+            <div class="dashboard-layout">
+                <!-- Line Chart Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fa-solid fa-chart-area"></i>
+                            <span id="chart-display-title">고장률 분석 그래프</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="reliability-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Pivot Table Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fa-solid fa-table-cells"></i>
+                            <span id="table-display-title">피벗 분석 데이터 테이블</span>
+                        </div>
+                        <div class="search-wrapper">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" class="table-search" id="pivot-table-search" placeholder="사용개월 검색...">
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="pivot-data-table">
+                            <thead>
+                                <!-- Dynamic Headers -->
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div>Reliability Engineering Dashboard &copy; 2026. Antigravity Pair-Programming.</div>
+        <div class="console-logs">
+            <div class="log-item" id="log-svc-status"><i class="fa-solid fa-circle-dot"></i> SVC: 미로드</div>
+            <div class="log-item" id="log-prod-status"><i class="fa-solid fa-circle-dot"></i> 생산: 미로드</div>
+            <div class="log-item" id="log-calc-time"><i class="fa-solid fa-clock"></i> 연산시간: -</div>
+        </div>
+    </footer>
+
+    <!-- Filter Control Popup Modal (Popup Menu) -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-sliders"></i> 분석 조건 설정 (Dashboard Controls)</h2>
+                <button class="modal-close" id="btn-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-content">
+                <!-- 1. File Upload Fields -->
+                <div class="upload-section">
+                    <div class="file-dropzone" id="dropzone-svc">
+                        <i class="fa-solid fa-file-csv"></i>
+                        <p id="label-svc-file">서비스 Raw Data 선택</p>
+                        <span>01_Total_SVC_Data.csv</span>
+                        <input type="file" id="file-svc-input" accept=".csv">
+                    </div>
+                    <div class="file-dropzone" id="dropzone-prod">
+                        <i class="fa-solid fa-file-csv"></i>
+                        <p id="label-prod-file">생산수량 데이터 선택</p>
+                        <span>02_Production.csv</span>
+                        <input type="file" id="file-prod-input" accept=".csv">
+                    </div>
+                </div>
+
+                <!-- 2. Date Range and Analysis Type Selection -->
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>생산월 분석 열 선택 (PROD_DT Column)</label>
+                        <select id="select-prod-column" disabled style="margin-bottom: 0.75rem;">
+                            <option value="">서비스 데이터를 먼저 로드하세요</option>
+                        </select>
+                        
+                        <label>생산월 분석 기간 선택</label>
+                        <div class="select-row">
+                            <select id="select-start-month" disabled>
+                                <option value="">시작월</option>
+                            </select>
+                            <select id="select-end-month" disabled>
+                                <option value="">종료월</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>데이터 분석 유형 선택</label>
+                        <div class="analysis-tabs" id="analysis-type-tabs" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: rgba(0, 0, 0, 0.25); padding: 4px; border-radius: 0.75rem;">
+                            <button class="analysis-tab active" data-type="count" style="font-size: 0.8rem; padding: 0.5rem 0.25rem;">순간 서비스 건 분석</button>
+                            <button class="analysis-tab" data-type="cum_count" style="font-size: 0.8rem; padding: 0.5rem 0.25rem;">누적 서비스 건 분석</button>
+                            <button class="analysis-tab" data-type="hazard" style="font-size: 0.8rem; padding: 0.5rem 0.25rem;">순간 고장률 분석</button>
+                            <button class="analysis-tab" data-type="cdf" style="font-size: 0.8rem; padding: 0.5rem 0.25rem;">누적 고장률 분석</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Component Column Selector and Multi-select Filter (Worst구분(재)_중분류) -->
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>분석 대상 부품 항목 열 선택 (Worst구분 Column)</label>
+                        <select id="select-part-column" disabled>
+                            <option value="">서비스 데이터를 먼저 로드하세요</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="position: relative;">
+                        <label>분석 대상 부품 선택 (Worst구분)</label>
+                        <div class="dropdown-trigger" id="comp-dropdown-trigger">
+                            <span id="comp-dropdown-text">부품 선택 (서비스 데이터 로드 필요)</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="dropdown-popup" id="comp-dropdown-popup" style="width: 100%;">
+                            <div class="dropdown-popup-header">
+                                <input type="text" class="search-mini" id="component-search" placeholder="부품 검색..." style="max-width: 100%; width: 100%; margin-bottom: 0.5rem;">
+                                <div class="filter-actions" style="justify-content: flex-end; margin-bottom: 0.5rem;">
+                                    <button class="btn-mini" id="btn-comp-all">모두 선택</button>
+                                    <button class="btn-mini" id="btn-comp-none">모두 해제</button>
+                                </div>
+                            </div>
+                            <div class="list-container" style="max-height: 220px;">
+                                <div class="checklist-grid-1" id="component-checklist">
+                                    <div style="text-align: center; padding: 1.5rem 0; color: var(--text-muted); font-size: 0.8rem;">
+                                        서비스 데이터를 로드하면 부품 목록이 채워집니다.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Production Month Checkboxes to Plot -->
+                <div class="form-group">
+                    <div class="filter-header">
+                        <label>그래프 플로팅 대상 생산월 (PROD_DT) 선택</label>
+                        <div class="filter-actions">
+                            <button class="btn-mini" id="btn-plot-all">모두 선택</button>
+                            <button class="btn-mini" id="btn-plot-none">모두 해제</button>
+                        </div>
+                    </div>
+                    <div class="filter-box">
+                        <div class="list-container">
+                            <div class="checklist-grid-4" id="plot-months-checklist">
+                                <div style="grid-column: span 4; text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.8rem;">
+                                    기간을 설정하면 월별 체크리스트가 채워집니다.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-settings-cancel">취소</button>
+                <button class="btn btn-primary" id="btn-settings-apply" disabled>설정 적용 및 분석 실행</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spinner Loading Overlay -->
+    <div class="loader-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loader-text" id="loading-text">데이터 처리 중...</div>
+    </div>
+
+    <script>
+        // Global variables for stored datasets
+        let rawServiceData = [];
+        let parsedServiceRows = []; // Keep raw records for dynamic column switches
+        let productionQtyMap = {}; // { YYYYMM: Quantity }
+        let allUniqueComponents = [];
+        let allUniqueProdMonths = []; // Unique PROD_DT from service data
+        let maxServiceMonth = ""; // Latest CLOSE_RTN_DT_MONTH in service data
+
+        // User Selection States
+        let selectedStartMonth = "";
+        let selectedEndMonth = "";
+        let checkedComponents = new Set();
+        let checkedPlotMonths = new Set();
+        let selectedAnalysisType = "count"; // 'count', 'cum_count', 'hazard', 'cdf'
+        let selectedPartColumn = ""; // Dynamic part column header name
+        let selectedProdColumn = ""; // Dynamic production date column header name
+
+        // Chart Instance
+        let reliabilityChart = null;
+        let calculatedPivotData = null; // Stored current pivot table for search and export
+
+        // DOM elements
+        const modal = document.getElementById('settings-modal');
+        const btnSettingsToggle = document.getElementById('btn-settings-toggle');
+        const btnModalClose = document.getElementById('btn-modal-close');
+        const btnSettingsCancel = document.getElementById('btn-settings-cancel');
+        const btnSettingsApply = document.getElementById('btn-settings-apply');
+        const btnUploadStart = document.getElementById('btn-upload-start');
+        const btnExport = document.getElementById('btn-export');
+
+        const fileSvcInput = document.getElementById('file-svc-input');
+        const fileProdInput = document.getElementById('file-prod-input');
+        const dropzoneSvc = document.getElementById('dropzone-svc');
+        const dropzoneProd = document.getElementById('dropzone-prod');
+
+        const selectStartMonth = document.getElementById('select-start-month');
+        const selectEndMonth = document.getElementById('select-end-month');
+        const selectPartColumn = document.getElementById('select-part-column');
+        const selectProdColumn = document.getElementById('select-prod-column');
+
+        const compSearchInput = document.getElementById('component-search');
+        const componentChecklist = document.getElementById('component-checklist');
+        const plotMonthsChecklist = document.getElementById('plot-months-checklist');
+        
+        // Dropdown elements
+        const compDropdownTrigger = document.getElementById('comp-dropdown-trigger');
+        const compDropdownPopup = document.getElementById('comp-dropdown-popup');
+        const compDropdownText = document.getElementById('comp-dropdown-text');
+
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+
+        // Modal Open/Close handlers
+        function openModal() {
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            modal.classList.remove('active');
+            compDropdownPopup.classList.remove('active'); // Close dropdown when modal closes
+        }
+
+        btnSettingsToggle.addEventListener('click', openModal);
+        btnModalClose.addEventListener('click', closeModal);
+        btnSettingsCancel.addEventListener('click', closeModal);
+        btnUploadStart.addEventListener('click', openModal);
+
+        // Toggle component selection dropdown popup
+        compDropdownTrigger.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (rawServiceData.length > 0) {
+                compDropdownPopup.classList.toggle('active');
+            } else {
+                alert("서비스 데이터 CSV 파일을 먼저 로드해 주세요.");
+            }
+        });
+
+        // Close dropdown popup when clicking outside of it
+        document.addEventListener('click', function(e) {
+            if (compDropdownPopup && !compDropdownPopup.contains(e.target) && e.target !== compDropdownTrigger) {
+                compDropdownPopup.classList.remove('active');
+            }
+        });
+
+        // Handle part column header selection dropdown change
+        selectPartColumn.addEventListener('change', function() {
+            selectedPartColumn = this.value;
+            updateComponentsFromSelectedColumn();
+        });
+
+        // Handle production column header selection dropdown change
+        selectProdColumn.addEventListener('change', function() {
+            selectedProdColumn = this.value;
+            processServiceData();
+        });
+
+        // Loader Toggle
+        function showLoader(text) {
+            loadingText.textContent = text || "데이터 처리 중...";
+            loadingOverlay.classList.add('active');
+        }
+
+        function hideLoader() {
+            loadingOverlay.classList.remove('active');
+        }
+
+        // CSV Month-Difference Calculation
+        function calculateUsageMonths(prodMonthStr, serviceMonthStr) {
+            if (!prodMonthStr || !serviceMonthStr) return null;
+            const pStr = prodMonthStr.trim();
+            const sStr = serviceMonthStr.trim();
+            if (pStr.length !== 6 || sStr.length !== 6) return null;
+
+            const pYear = parseInt(pStr.substring(0, 4));
+            const pMonth = parseInt(pStr.substring(4, 6));
+            const sYear = parseInt(sStr.substring(0, 4));
+            const sMonth = parseInt(sStr.substring(4, 6));
+
+            if (isNaN(pYear) || isNaN(pMonth) || isNaN(sYear) || isNaN(sMonth)) return null;
+
+            return (sYear - pYear) * 12 + (sMonth - pMonth);
+        }
+
+        // File Selection/Upload Handling
+        fileSvcInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) handleServiceFile(file);
+        });
+
+        fileProdInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) handleProductionFile(file);
+        });
+
+        // Drag & Drop visual support
+        [dropzoneSvc, dropzoneProd].forEach(zone => {
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.style.borderColor = 'var(--accent-primary)';
+            });
+            zone.addEventListener('dragleave', () => {
+                zone.style.borderColor = zone.classList.contains('uploaded') ? 'var(--success)' : 'rgba(255, 255, 255, 0.1)';
+            });
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                const input = zone.id === 'dropzone-svc' ? fileSvcInput : fileProdInput;
+                if (file && file.name.endsWith('.csv')) {
+                    input.files = e.dataTransfer.files;
+                    if (zone.id === 'dropzone-svc') handleServiceFile(file);
+                    else handleProductionFile(file);
+                } else {
+                    alert("CSV 형식의 파일만 업로드할 수 있습니다.");
+                    zone.style.borderColor = zone.classList.contains('uploaded') ? 'var(--success)' : 'rgba(255, 255, 255, 0.1)';
+                }
+            });
+        });
+
+        // CSV parsing using EUC-KR for Service file
+        function handleServiceFile(file) {
+            showLoader("서비스 CSV 파싱 중 (euc-kr)...");
+            document.getElementById('label-svc-file').textContent = file.name;
+            dropzoneSvc.classList.add('uploaded');
+            dropzoneSvc.style.borderColor = 'var(--success)';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                Papa.parse(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                    transformHeader: function(h) {
+                        return h.trim();
+                    },
+                    complete: function(results) {
+                        parsedServiceRows = results.data;
+                        
+                        // Populate production column dropdown and auto-match
+                        populateProdColumnDropdown();
+                        
+                        // Calculate usage months & prepare data
+                        processServiceData();
+                    },
+                    error: function(err) {
+                        alert("서비스 데이터 CSV 파일 파싱 실패: " + err.message);
+                        hideLoader();
+                    }
+                });
+            };
+            reader.readAsText(file, 'euc-kr');
+        }
+
+        // Populate Production Column Dropdown
+        function populateProdColumnDropdown() {
+            if (parsedServiceRows.length === 0) return;
+            
+            selectProdColumn.innerHTML = '';
+            
+            const keys = Object.keys(parsedServiceRows[0]);
+            
+            keys.forEach(k => {
+                if (k === "사용개월") return;
+                const opt = document.createElement('option');
+                opt.value = k;
+                opt.textContent = k.trim();
+                selectProdColumn.appendChild(opt);
+            });
+            
+            selectProdColumn.disabled = false;
+            
+            // Try to find default prod column (PROD_DT) with robust fuzzy matching
+            let defaultProdCol = "";
+            
+            // Priority 1: Exact "PROD_DT" (case-insensitive)
+            keys.forEach(k => {
+                if (k.trim().toUpperCase() === "PROD_DT") {
+                    defaultProdCol = k;
+                }
+            });
+            
+            // Priority 2: Contains "prod" and ("dt" or "date" or "month" or "월")
+            if (!defaultProdCol) {
+                keys.forEach(k => {
+                    const lower = k.toLowerCase();
+                    if (lower.includes("prod") && (lower.includes("dt") || lower.includes("date") || lower.includes("month") || lower.includes("월"))) {
+                        defaultProdCol = k;
+                    }
+                });
+            }
+            
+            // Priority 3: Contains "생산월" or "생산일"
+            if (!defaultProdCol) {
+                keys.forEach(k => {
+                    if (k.includes("생산월") || k.includes("생산일")) {
+                        defaultProdCol = k;
+                    }
+                });
+            }
+            
+            // Index-based fallback (index 34 was default PROD_DT)
+            if (!defaultProdCol && keys.length > 34) defaultProdCol = keys[34];
+            if (!defaultProdCol && keys.length > 0) defaultProdCol = keys[0];
+            
+            selectProdColumn.value = defaultProdCol;
+            selectedProdColumn = defaultProdCol;
+        }
+
+        // Dynamically compute usage months based on selected production column
+        function processServiceData() {
+            if (parsedServiceRows.length === 0 || !selectedProdColumn) return;
+            
+            showLoader("데이터 재처리 중...");
+            
+            let closeRtnMonthKey = "";
+            const keys = Object.keys(parsedServiceRows[0]);
+            
+            // 1. Name-based match for CLOSE_RTN_DT_MONTH
+            keys.forEach(k => {
+                const trimmed = k.trim();
+                if (trimmed === "CLOSE_RTN_DT_MONTH") closeRtnMonthKey = k;
+            });
+
+            // 2. Index-based fallback
+            if (!closeRtnMonthKey && keys.length > 35) closeRtnMonthKey = keys[35];
+            if (!closeRtnMonthKey) closeRtnMonthKey = "CLOSE_RTN_DT_MONTH";
+
+            const validRecords = [];
+            const prodMonthsSet = new Set();
+            let maxMonth = "000000";
+
+            parsedServiceRows.forEach(row => {
+                const prodDt = row[selectedProdColumn];
+                const closeRtnDtMonth = row[closeRtnMonthKey];
+
+                if (prodDt && closeRtnDtMonth) {
+                    const usageMonths = calculateUsageMonths(prodDt, closeRtnDtMonth);
+                    if (usageMonths !== null && usageMonths >= 0) {
+                        // Create normalized reference properties
+                        row['PROD_DT'] = prodDt.trim();
+                        row['CLOSE_RTN_DT_MONTH'] = closeRtnDtMonth.trim();
+                        row['사용개월'] = usageMonths;
+                        
+                        validRecords.push(row);
+                        prodMonthsSet.add(prodDt.trim());
+                        
+                        if (closeRtnDtMonth.trim() > maxMonth) {
+                            maxMonth = closeRtnDtMonth.trim();
+                        }
+                    }
+                }
+            });
+
+            rawServiceData = validRecords;
+            allUniqueProdMonths = Array.from(prodMonthsSet).sort();
+            maxServiceMonth = maxMonth;
+
+            document.getElementById('log-svc-status').innerHTML = `<i class="fa-solid fa-circle-check"></i> SVC: ${rawServiceData.length.toLocaleString()}건`;
+            document.getElementById('log-svc-status').className = "log-item success";
+
+            // Repopulate dependent elements
+            populatePartColumnDropdown();
+            checkFileDependencies();
+            hideLoader();
+        }
+
+        // CSV parsing for Production file
+        function handleProductionFile(file) {
+            showLoader("생산수량 CSV 파싱 중...");
+            document.getElementById('label-prod-file').textContent = file.name;
+            dropzoneProd.classList.add('uploaded');
+            dropzoneProd.style.borderColor = 'var(--success)';
+
+            Papa.parse(file, {
+                header: false,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const data = results.data;
+                    if (data.length < 2) {
+                        alert("생산수량 파일 형식이 올바르지 않습니다. 최소 2행(월명, 생산수량)이 필요합니다.");
+                        hideLoader();
+                        return;
+                    }
+
+                    const months = data[0];
+                    const qtys = data[1];
+                    const map = {};
+                    let parsedCount = 0;
+
+                    for (let i = 0; i < months.length; i++) {
+                        const m = months[i].trim();
+                        const q = parseInt(qtys[i]) || 0;
+                        if (m && m.length === 6) {
+                            map[m] = q;
+                            parsedCount++;
+                        }
+                    }
+
+                    productionQtyMap = map;
+
+                    document.getElementById('log-prod-status').innerHTML = `<i class="fa-solid fa-circle-check"></i> 생산: ${parsedCount}개 월`;
+                    document.getElementById('log-prod-status').className = "log-item success";
+
+                    checkFileDependencies();
+                    hideLoader();
+                },
+                error: function(err) {
+                    alert("생산수량 데이터 CSV 파일 파싱 실패: " + err.message);
+                    hideLoader();
+                }
+            });
+        }
+
+        // Check if both files are successfully uploaded
+        function checkFileDependencies() {
+            if (rawServiceData.length > 0 && Object.keys(productionQtyMap).length > 0) {
+                // Enable selectors
+                selectStartMonth.disabled = false;
+                selectEndMonth.disabled = false;
+                btnSettingsApply.disabled = false;
+
+                // Populate date ranges based on intersection of available months in production dataset
+                populateDateSelectors();
+            } else {
+                selectStartMonth.disabled = true;
+                selectEndMonth.disabled = true;
+                btnSettingsApply.disabled = true;
+            }
+        }
+
+        // Populate Date Start and End Dropdowns
+        function populateDateSelectors() {
+            // Find intersection of production months in both files
+            const prodCSVMonths = Object.keys(productionQtyMap).sort();
+            const serviceProdMonths = allUniqueProdMonths;
+            
+            // Filter months that exist in productionQtyMap AND exist as production months in service records
+            const commonMonths = prodCSVMonths.filter(m => serviceProdMonths.includes(m));
+            
+            selectStartMonth.innerHTML = '';
+            selectEndMonth.innerHTML = '';
+
+            commonMonths.forEach(m => {
+                const opt1 = document.createElement('option');
+                opt1.value = m;
+                opt1.textContent = `${m.substring(0, 4)}년 ${m.substring(4, 6)}월`;
+                selectStartMonth.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = m;
+                opt2.textContent = `${m.substring(0, 4)}년 ${m.substring(4, 6)}월`;
+                selectEndMonth.appendChild(opt2);
+            });
+
+            // Set default selections
+            if (commonMonths.length > 0) {
+                selectStartMonth.value = commonMonths[0];
+                selectEndMonth.value = commonMonths[commonMonths.length - 1];
+                
+                selectedStartMonth = commonMonths[0];
+                selectedEndMonth = commonMonths[commonMonths.length - 1];
+
+                handleDateRangeChange();
+            }
+        }
+
+        selectStartMonth.addEventListener('change', function() {
+            selectedStartMonth = this.value;
+            handleDateRangeChange();
+        });
+
+        selectEndMonth.addEventListener('change', function() {
+            selectedEndMonth = this.value;
+            handleDateRangeChange();
+        });
+
+        // Triggered when date ranges change to update available plotting months list
+        function handleDateRangeChange() {
+            if (!selectedStartMonth || !selectedEndMonth) return;
+
+            // Enforce start <= end
+            if (selectedStartMonth > selectedEndMonth) {
+                selectEndMonth.value = selectedStartMonth;
+                selectedEndMonth = selectedStartMonth;
+            }
+
+            // Re-populate plotting months checkboxes
+            populatePlotMonthsList();
+        }
+
+        // Populate Part Column Dropdown
+        function populatePartColumnDropdown() {
+            if (rawServiceData.length === 0) return;
+            
+            selectPartColumn.innerHTML = '';
+            
+            // Get all keys from the first record
+            const keys = Object.keys(rawServiceData[0]);
+            
+            keys.forEach(k => {
+                if (k === "사용개월") return;
+                const opt = document.createElement('option');
+                opt.value = k;
+                opt.textContent = k.trim();
+                selectPartColumn.appendChild(opt);
+            });
+            
+            selectPartColumn.disabled = false;
+            
+            // Try to find default part column (Worst ... 중분류) with robust fuzzy matching
+            let defaultPartCol = "";
+            
+            // Priority 1: Contains both "worst" (case-insensitive) and "중분류"
+            keys.forEach(k => {
+                const lower = k.toLowerCase();
+                if (lower.includes("worst") && lower.includes("중분류")) {
+                    defaultPartCol = k;
+                }
+            });
+            
+            // Priority 2: Contains "worst" (case-insensitive) or "worst구분"
+            if (!defaultPartCol) {
+                keys.forEach(k => {
+                    const lower = k.toLowerCase();
+                    if (lower.includes("worst")) {
+                        defaultPartCol = k;
+                    }
+                });
+            }
+            
+            // Priority 3: Contains "중분류"
+            if (!defaultPartCol) {
+                keys.forEach(k => {
+                    if (k.includes("중분류")) {
+                        defaultPartCol = k;
+                    }
+                });
+            }
+            
+            // Priority 4: Contains "부품"
+            if (!defaultPartCol) {
+                keys.forEach(k => {
+                    if (k.includes("부품")) {
+                        defaultPartCol = k;
+                    }
+                });
+            }
+            
+            // Index-based fallback (index 51 was Worst구분(재)_중분류)
+            if (!defaultPartCol && keys.length > 51) defaultPartCol = keys[51];
+            if (!defaultPartCol && keys.length > 0) defaultPartCol = keys[0];
+            
+            selectPartColumn.value = defaultPartCol;
+            selectedPartColumn = defaultPartCol;
+            
+            // Trigger components loading
+            updateComponentsFromSelectedColumn();
+        }
+
+        // Dynamically extract unique values from selected column
+        function updateComponentsFromSelectedColumn() {
+            if (rawServiceData.length === 0 || !selectedPartColumn) return;
+            
+            const componentsSet = new Set();
+            rawServiceData.forEach(row => {
+                const val = row[selectedPartColumn];
+                if (val !== undefined && val !== null) {
+                    componentsSet.add(val.toString().trim());
+                }
+            });
+            
+            allUniqueComponents = Array.from(componentsSet).sort();
+            populateComponentsList();
+        }
+
+        // Update trigger text with counts
+        function updateCompDropdownText() {
+            if (rawServiceData.length === 0) {
+                compDropdownText.textContent = "부품 선택 (서비스 데이터 로드 필요)";
+                return;
+            }
+            if (checkedComponents.size === allUniqueComponents.length) {
+                compDropdownText.textContent = "부품 선택 (모든 부품 선택됨)";
+            } else if (checkedComponents.size === 0) {
+                compDropdownText.textContent = "부품 선택 (선택된 부품 없음)";
+            } else {
+                compDropdownText.textContent = `부품 선택 (${checkedComponents.size}개 선택됨)`;
+            }
+        }
+
+        // Populate Components Checkbox List
+        function populateComponentsList() {
+            componentChecklist.innerHTML = '';
+            checkedComponents.clear();
+            compSearchInput.value = ''; // Clear search query when loading new files
+
+            allUniqueComponents.forEach(comp => {
+                const item = document.createElement('div');
+                item.className = 'check-item checked';
+                item.dataset.val = comp;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = comp;
+                checkbox.checked = true;
+                checkedComponents.add(comp);
+
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        checkedComponents.add(comp);
+                        item.classList.add('checked');
+                    } else {
+                        checkedComponents.delete(comp);
+                        item.classList.remove('checked');
+                    }
+                    updateCompDropdownText();
+                });
+
+                const textSpan = document.createElement('span');
+                textSpan.textContent = comp;
+                textSpan.title = comp;
+
+                // Click wrapper to toggle checkbox (avoid double click triggers in nested labels)
+                item.addEventListener('click', function(e) {
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+
+                item.appendChild(checkbox);
+                item.appendChild(textSpan);
+                componentChecklist.appendChild(item);
+            });
+
+            updateCompDropdownText();
+        }
+
+        // Search/Filter Components in real-time
+        compSearchInput.addEventListener('input', function() {
+            const query = this.value.trim().toLowerCase();
+            const items = componentChecklist.querySelectorAll('.check-item');
+            
+            items.forEach(item => {
+                const val = item.dataset.val.toLowerCase();
+                if (val.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+        // Component select helpers
+        document.getElementById('btn-comp-all').addEventListener('click', () => {
+            const items = componentChecklist.querySelectorAll('.check-item');
+            items.forEach(item => {
+                if (item.style.display !== 'none') {
+                    const cb = item.querySelector('input');
+                    cb.checked = true;
+                    checkedComponents.add(cb.value);
+                    item.classList.add('checked');
+                }
+            });
+            updateCompDropdownText();
+        });
+
+        document.getElementById('btn-comp-none').addEventListener('click', () => {
+            const items = componentChecklist.querySelectorAll('.check-item');
+            items.forEach(item => {
+                if (item.style.display !== 'none') {
+                    const cb = item.querySelector('input');
+                    cb.checked = false;
+                    checkedComponents.delete(cb.value);
+                    item.classList.remove('checked');
+                }
+            });
+            updateCompDropdownText();
+        });
+
+        // Populate Plotting Months Checkbox List
+        function populatePlotMonthsList() {
+            plotMonthsChecklist.innerHTML = '';
+            checkedPlotMonths.clear();
+
+            const allMonths = Object.keys(productionQtyMap).sort();
+            const filteredMonths = allMonths.filter(m => m >= selectedStartMonth && m <= selectedEndMonth);
+
+            if (filteredMonths.length === 0) {
+                plotMonthsChecklist.innerHTML = '<div style="grid-column: span 4; text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.8rem;">선택된 범위에 해당하는 월이 없습니다.</div>';
+                return;
+            }
+
+            filteredMonths.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'check-item checked';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = m;
+                checkbox.checked = true;
+                checkedPlotMonths.add(m);
+
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        checkedPlotMonths.add(m);
+                        item.classList.add('checked');
+                    } else {
+                        checkedPlotMonths.delete(m);
+                        item.classList.remove('checked');
+                    }
+                });
+
+                const textSpan = document.createElement('span');
+                textSpan.textContent = `${m.substring(2, 4)}년 ${m.substring(4, 6)}월`;
+
+                // Click wrapper to toggle checkbox
+                item.addEventListener('click', function(e) {
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                });
+
+                item.appendChild(checkbox);
+                item.appendChild(textSpan);
+                plotMonthsChecklist.appendChild(item);
+            });
+        }
+
+        // Plot months helper buttons
+        document.getElementById('btn-plot-all').addEventListener('click', () => {
+            const checkboxes = plotMonthsChecklist.querySelectorAll('input');
+            checkboxes.forEach(cb => {
+                cb.checked = true;
+                checkedPlotMonths.add(cb.value);
+                cb.parentElement.classList.add('checked');
+            });
+        });
+
+        document.getElementById('btn-plot-none').addEventListener('click', () => {
+            const checkboxes = plotMonthsChecklist.querySelectorAll('input');
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+                checkedPlotMonths.delete(cb.value);
+                cb.parentElement.classList.remove('checked');
+            });
+        });
+
+        // Analysis Type Tab Switching
+        const tabs = document.querySelectorAll('.analysis-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                tabs.forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                selectedAnalysisType = this.dataset.type;
+            });
+        });
+
+        // Settings Apply Event Handler
+        btnSettingsApply.addEventListener('click', function() {
+            if (checkedComponents.size === 0) {
+                alert("최소 한 개 이상의 부품을 선택해 주세요.");
+                return;
+            }
+            if (checkedPlotMonths.size === 0) {
+                alert("최소 한 개 이상의 플로팅 생산월을 선택해 주세요.");
+                return;
+            }
+
+            closeModal();
+            runAnalysis();
+        });
+
+        // ----------------- ANALYSIS CORE ENGINE -----------------
+
+        function runAnalysis() {
+            const startTime = performance.now();
+            showLoader("데이터 분석 연산 중...");
+
+            const activePlotMonths = Array.from(checkedPlotMonths).sort();
+
+            // 1. Filter service records according to settings (only include active plot months)
+            const filteredRecords = rawServiceData.filter(row => {
+                const prodDt = row['PROD_DT'];
+                const comp = row[selectedPartColumn] ? row[selectedPartColumn].trim() : '';
+                
+                const matchesDate = prodDt >= selectedStartMonth && prodDt <= selectedEndMonth;
+                const matchesComponent = checkedComponents.has(comp);
+                const isPlottedMonth = checkedPlotMonths.has(prodDt);
+                
+                return matchesDate && matchesComponent && isPlottedMonth;
+            });
+
+            // 2. Identify the maximum possible usage month (field age) ONLY from the checked plot months
+            let maxUsageMonth = 0;
+            activePlotMonths.forEach(p => {
+                const maxPossible = calculateUsageMonths(p, maxServiceMonth);
+                if (maxPossible !== null && maxPossible > maxUsageMonth) {
+                    maxUsageMonth = maxPossible;
+                }
+            });
+            
+            // Fallback safety
+            if (maxUsageMonth < 0) maxUsageMonth = 0;
+
+            // 3. Initialize pivot structures
+            // Build the pivot grid counts: serviceCounts[usage_month][prod_dt]
+            const serviceCounts = Array.from({ length: maxUsageMonth + 1 }, () => {
+                const row = {};
+                activePlotMonths.forEach(m => row[m] = 0);
+                return row;
+            });
+
+            // Populate counts
+            filteredRecords.forEach(r => {
+                const usage = r['사용개월'];
+                const prod = r['PROD_DT'];
+                if (usage <= maxUsageMonth && serviceCounts[usage] && serviceCounts[usage][prod] !== undefined) {
+                    serviceCounts[usage][prod]++;
+                }
+            });
+
+            // 4. Compute reliability metrics (Service counts, Hazard, Cumulative Failure Rates) with Censoring
+            const censoredPivotTable = []; // [ { usage: t, values: { prod_dt: value_or_null } } ]
+            
+            // Cumulative sums storage for CDF calculations
+            const cumulativeCounts = {};
+            activePlotMonths.forEach(m => cumulativeCounts[m] = 0);
+
+            for (let t = 0; t <= maxUsageMonth; t++) {
+                const rowValues = {};
+                
+                activePlotMonths.forEach(p => {
+                    const maxPossible = calculateUsageMonths(p, maxServiceMonth);
+                    const prodQty = productionQtyMap[p] || 0;
+
+                    if (t <= maxPossible) {
+                        const count = serviceCounts[t][p];
+                        cumulativeCounts[p] += count;
+
+                        if (selectedAnalysisType === "count") {
+                            rowValues[p] = count;
+                        } else if (selectedAnalysisType === "cum_count") {
+                            rowValues[p] = cumulativeCounts[p];
+                        } else if (selectedAnalysisType === "hazard") {
+                            rowValues[p] = prodQty > 0 ? (count / prodQty) : 0;
+                        } else if (selectedAnalysisType === "cdf") {
+                            rowValues[p] = prodQty > 0 ? (cumulativeCounts[p] / prodQty) : 0;
+                        }
+                    } else {
+                        // Censored value (product has not aged to this point in the field)
+                        rowValues[p] = null;
+                    }
+                });
+
+                censoredPivotTable.push({
+                    usage: t,
+                    values: rowValues
+                });
+            }
+
+            calculatedPivotData = censoredPivotTable;
+
+            // 5. Update KPI Cards
+            updateKPICards(filteredRecords, activePlotMonths);
+
+            // 6. Draw Chart
+            renderChart(censoredPivotTable, activePlotMonths);
+
+            // 7. Render Table
+            renderPivotTable(censoredPivotTable, activePlotMonths);
+
+            // Show UI widgets, hide placeholder
+            document.getElementById('upload-placeholder').style.display = 'none';
+            document.getElementById('dashboard-widgets').style.display = 'flex';
+            btnExport.style.display = 'inline-flex';
+
+            const endTime = performance.now();
+            const elapsed = ((endTime - startTime) / 1000).toFixed(3);
+            
+            document.getElementById('log-calc-time').innerHTML = `<i class="fa-solid fa-clock"></i> 연산시간: ${elapsed}초`;
+            hideLoader();
+        }
+
+        // Update Stats widget numbers
+        function updateKPICards(filteredRecords, activePlotMonths) {
+            // Count total production quantity for active plotted months
+            let totalProdQty = 0;
+            activePlotMonths.forEach(m => {
+                totalProdQty += productionQtyMap[m] || 0;
+            });
+            document.getElementById('stat-total-prod').textContent = totalProdQty.toLocaleString();
+
+            // Total filtered service cases in the selected batches
+            let totalSvcCases = 0;
+            filteredRecords.forEach(r => {
+                if (activePlotMonths.includes(r['PROD_DT'])) {
+                    totalSvcCases++;
+                }
+            });
+            document.getElementById('stat-total-svc').textContent = totalSvcCases.toLocaleString();
+
+            // Number of batches selected
+            document.getElementById('stat-selected-batches').textContent = activePlotMonths.length;
+
+            // Maximum cumulative failure rate among selected batches
+            let maxCDFVal = 0;
+            activePlotMonths.forEach(p => {
+                const prodQty = productionQtyMap[p] || 0;
+                if (prodQty > 0) {
+                    // find cumulative count for this batch
+                    let batchSvcSum = 0;
+                    filteredRecords.forEach(r => {
+                        if (r['PROD_DT'] === p) {
+                            batchSvcSum++;
+                        }
+                    });
+                    const cdf = (batchSvcSum / prodQty) * 100;
+                    if (cdf > maxCDFVal) {
+                        maxCDFVal = cdf;
+                    }
+                }
+            });
+            document.getElementById('stat-max-cdf').textContent = maxCDFVal.toFixed(4) + "%";
+        }
+
+        // Generate dynamic distinct HSL colors
+        function getDatasetColor(index, total) {
+            const h = (index * (360 / Math.max(total, 1))) % 360;
+            return `hsl(${h}, 85%, 60%)`;
+        }
+
+        // Render Chart using Chart.js
+        function renderChart(pivotData, activePlotMonths) {
+            const ctx = document.getElementById('reliability-chart').getContext('2d');
+            
+            if (reliabilityChart) {
+                reliabilityChart.destroy();
+            }
+
+            // Labels are usage months
+            const labels = pivotData.map(d => `${d.usage}개월`);
+
+            // Datasets: each production month is a series
+            const datasets = activePlotMonths.map((p, idx) => {
+                const dataPoints = pivotData.map(d => {
+                    const val = d.values[p];
+                    if (val === null) return null;
+                    return (selectedAnalysisType === "count" || selectedAnalysisType === "cum_count") ? val : (val * 100);
+                });
+
+                const color = getDatasetColor(idx, activePlotMonths.length);
+                const prodQty = productionQtyMap[p] || 0;
+
+                return {
+                    label: `${p} (생산: ${prodQty.toLocaleString()}대)`,
+                    data: dataPoints,
+                    borderColor: color,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: activePlotMonths.length > 20 ? 1 : 3,
+                    pointHoverRadius: 6,
+                    tension: 0.1,
+                    spanGaps: false
+                };
+            });
+
+            // Calculate the maximum Y-value in the active datasets to set a clean dynamic Y-axis scale
+            let maxY = 0;
+            datasets.forEach(dataset => {
+                dataset.data.forEach(val => {
+                    if (val !== null && !isNaN(val) && val > maxY) {
+                        maxY = val;
+                    }
+                });
+            });
+
+            // Set a safe maximum for the Y-axis (adding 5% padding to avoid lines touching the top border)
+            const yAxisMax = maxY > 0 ? (maxY * 1.05) : null;
+
+            let yAxisTitle = "순간 서비스 건수 (건)";
+            let tooltipSuffix = "건";
+            if (selectedAnalysisType === "cum_count") {
+                yAxisTitle = "누적 서비스 건수 (건)";
+                tooltipSuffix = "건";
+            } else if (selectedAnalysisType === "hazard") {
+                yAxisTitle = "순간 고장률 (%)";
+                tooltipSuffix = "%";
+            } else if (selectedAnalysisType === "cdf") {
+                yAxisTitle = "누적 고장률 (%)";
+                tooltipSuffix = "%";
+            }
+
+            // Set display titles
+            const titleMap = {
+                'count': '순간 서비스 건수 분석 그래프 (Instantaneous Cases count)',
+                'cum_count': '누적 서비스 건수 분석 그래프 (Cumulative Cases count)',
+                'hazard': '순간 고장률 분석 그래프 (Hazard Rate, PDF)',
+                'cdf': '누적 고장률 분석 그래프 (Cumulative Failure Rate, CDF)'
+            };
+            document.getElementById('chart-display-title').textContent = titleMap[selectedAnalysisType];
+            document.getElementById('table-display-title').textContent = titleMap[selectedAnalysisType].replace('그래프', '데이터 테이블');
+
+            reliabilityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: '#e2e8f0',
+                                font: {
+                                    family: 'Plus Jakarta Sans',
+                                    size: 10
+                                },
+                                boxWidth: 12
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(15, 18, 30, 0.95)',
+                            titleColor: 'var(--accent-primary)',
+                            titleFont: { family: 'Plus Jakarta Sans', weight: 'bold' },
+                            bodyFont: { family: 'Plus Jakarta Sans' },
+                            borderColor: 'var(--card-border)',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label.split(' ')[0] || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (selectedAnalysisType === 'count' || selectedAnalysisType === 'cum_count') {
+                                            label += context.parsed.y.toLocaleString() + tooltipSuffix;
+                                        } else {
+                                            label += context.parsed.y.toFixed(5) + tooltipSuffix;
+                                        }
+                                    } else {
+                                        label += "데이터 단절 (Censored)";
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.03)'
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Plus Jakarta Sans' }
+                            },
+                            title: {
+                                display: true,
+                                text: '제품 사용개월수 (Months in Field)',
+                                color: '#e2e8f0',
+                                font: { family: 'Plus Jakarta Sans', weight: 'bold' }
+                            }
+                        },
+                        y: {
+                            min: 0,
+                            max: yAxisMax,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.03)'
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Plus Jakarta Sans' }
+                            },
+                            title: {
+                                display: true,
+                                text: yAxisTitle,
+                                color: '#e2e8f0',
+                                font: { family: 'Plus Jakarta Sans', weight: 'bold' }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Pivot Table
+        function renderPivotTable(pivotData, activePlotMonths) {
+            const table = document.getElementById('pivot-data-table');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+
+            // 1. Build Header
+            let headerHTML = `<tr><th style="text-align: center;">사용개월</th>`;
+            activePlotMonths.forEach(p => {
+                headerHTML += `<th style="text-align: right; min-width: 110px;">${p}</th>`;
+            });
+            headerHTML += '</tr>';
+            thead.innerHTML = headerHTML;
+
+            // 2. Build Rows
+            renderTableRows(pivotData, activePlotMonths);
+        }
+
+        function renderTableRows(pivotData, activePlotMonths, filterQuery = '') {
+            const tbody = document.getElementById('pivot-data-table').querySelector('tbody');
+            tbody.innerHTML = '';
+
+            pivotData.forEach(row => {
+                const usageStr = row.usage.toString();
+                
+                // If search filter is active
+                if (filterQuery && !usageStr.includes(filterQuery)) {
+                    return;
+                }
+
+                const tr = document.createElement('tr');
+                
+                // usage month cell
+                const tdUsage = document.createElement('td');
+                tdUsage.className = 'usage-month';
+                tdUsage.textContent = `${usageStr}M`;
+                tr.appendChild(tdUsage);
+
+                // data cells
+                activePlotMonths.forEach(p => {
+                    const tdVal = document.createElement('td');
+                    const val = row.values[p];
+
+                    if (val === null) {
+                        tdVal.className = 'null-cell';
+                        tdVal.textContent = '-';
+                    } else {
+                        tdVal.className = 'data-cell';
+                        if (selectedAnalysisType === "count" || selectedAnalysisType === "cum_count") {
+                            tdVal.textContent = val.toLocaleString();
+                        } else {
+                            const pct = val * 100;
+                            tdVal.textContent = pct.toFixed(5) + "%";
+                        }
+                    }
+                    tr.appendChild(tdVal);
+                });
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Search within Pivot Table Rows
+        document.getElementById('pivot-table-search').addEventListener('input', function() {
+            const q = this.value.trim();
+            if (calculatedPivotData) {
+                const activePlotMonths = Array.from(checkedPlotMonths).sort();
+                renderTableRows(calculatedPivotData, activePlotMonths, q);
+            }
+        });
+
+        // Export Pivot Table to CSV
+        btnExport.addEventListener('click', async function() {
+            if (!calculatedPivotData) return;
+
+            const activePlotMonths = Array.from(checkedPlotMonths).sort();
+            let csvContent = "\ufeff"; // BOM for excel Korean character support
+
+            // Headers
+            csvContent += "사용개월," + activePlotMonths.join(",") + "\n";
+
+            // Rows
+            calculatedPivotData.forEach(row => {
+                let line = `${row.usage}`;
+                activePlotMonths.forEach(p => {
+                    const val = row.values[p];
+                    if (val === null) {
+                        line += ",-";
+                    } else {
+                        if (selectedAnalysisType === "count" || selectedAnalysisType === "cum_count") {
+                            line += `,${val}`;
+                        } else {
+                            line += `,${(val * 100).toFixed(6)}%`;
+                        }
+                    }
+                });
+                csvContent += line + "\n";
+            });
+
+            let defaultFilename = `Pivot_Table_Instantaneous_Service_Cases.csv`;
+            if (selectedAnalysisType === 'cum_count') defaultFilename = `Pivot_Table_Cumulative_Service_Cases.csv`;
+            else if (selectedAnalysisType === 'hazard') defaultFilename = `Pivot_Table_Hazard_Rates.csv`;
+            else if (selectedAnalysisType === 'cdf') defaultFilename = `Pivot_Table_Cumulative_Failure_Rates.csv`;
+
+            // Try modern File System Access API (Chrome, Edge, etc.)
+            if (window.showSaveFilePicker) {
+                try {
+                    const options = {
+                        suggestedName: defaultFilename,
+                        types: [{
+                            description: 'CSV Files',
+                            accept: {
+                                'text/csv': ['.csv'],
+                            }
+                        }],
+                    };
+                    const handle = await window.showSaveFilePicker(options);
+                    const writable = await handle.createWritable();
+                    await writable.write(csvContent);
+                    await writable.close();
+                } catch (err) {
+                    console.log("File save picker cancelled or failed:", err);
+                }
+            } else {
+                // Fallback for browsers that do not support showSaveFilePicker (Firefox, Safari, etc.)
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", defaultFilename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+
+    </script>
+</body>
+</html>
